@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Webcam Runner</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- The actual game rendering canvas -->
+    <canvas id="gameCanvas"></canvas>
+    
+    <!-- Hidden video element to read the webcam stream -->
+    <video id="webcam" autoplay playsinline></video>
+
+    <!-- Overlay UI for Camera Start / Loading -->
+    <div id="ui-layer">
+        <h1 id="main-title">AI WEBCAM RUNNER</h1>
+        <p id="sub-title">Loading AI Models... Please wait.</p>
+        <button id="start-btn" style="display: none;">START CAMERA & PLAY</button>
+    </div>
+
+    <!-- The core game logic -->
+    <script type="module" src="game.js"></script>
+</body>
+</html>
