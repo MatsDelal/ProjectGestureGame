@@ -1,16 +1,25 @@
 import pygame
 import cv2
-import mediapipe as mp
 import random
 import sys
 import math
 import os
+import numpy as np
+from keras.models import load_model
+from PIL import Image, ImageOps
 
 # ==========================================
 # 1. INITIALIZATION & SETTINGS
 # ==========================================
-pygame.init()
-pygame.mixer.init()
+try:
+    pygame.init()
+    pygame.mixer.init()
+except pygame.error:
+    # Fallback for headless servers (like AWS EC2) without audio device
+    import os
+    os.environ['SDL_AUDIODRIVER'] = 'dummy'
+    pygame.init()
+    pygame.mixer.init()
 
 # Screen settings
 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -33,16 +42,17 @@ except:
     font = pygame.font.Font(None, 46)
     big_font = pygame.font.Font(None, 90)
 
-# ==========================================
-# 2. MEDIAPIPE & WEBCAM SETUP
-# ==========================================
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(
-    max_num_hands=1,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.7
-)
-mp_draw = mp.solutions.drawing_utils
+# Load Teachable Machine Model
+try:
+    model = load_model("keras_model.h5", compile=False)
+    with open("labels.txt", "r") as f:
+        class_names = [line.strip() for line in f.readlines()]
+except Exception as e:
+    print(f"Error loading model: {e}")
+    sys.exit()
+
+# Pre-allocate data array for model prediction
+data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
 
 # Start the webcam
 cap = cv2.VideoCapture(0)
@@ -369,30 +379,31 @@ while running:
     
     if ret:
         frame = cv2.flip(frame, 1) # mirror the image left-right
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(rgb_frame)
-
-        # C) MediaPipe Hand Detection Logic
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                # Draw the lines on the cam image
-                mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                
-                # Check which fingers are up
-                fingers_up = 0
-                tips = [8, 12, 16, 20]     # Top of the finger landmarks
-                mcps = [5, 9, 13, 17]      # Knuckle of the finger landmarks
-                
-                for tip, mcp in zip(tips, mcps):
-                    # In the screen, Y=0 is the top of your monitor, so lower y means the finger is physically higher.
-                    if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[mcp].y:
-                        fingers_up += 1
-                        
-                # 0 or 1 fingers we see as a "Fist"
-                if fingers_up <= 1:
-                    is_fist = True
-                else:
-                    is_open = True
+        
+        # Prepare image for Teachable Machine model
+        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(img_rgb)
+        size = (224, 224)
+        pil_img = ImageOps.fit(pil_img, size, Image.Resampling.LANCZOS)
+        
+        image_array = np.asarray(pil_img)
+        normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+        data[0] = normalized_image_array
+        
+        # Prediction
+        prediction = model.predict(data, verbose=0)
+        index = np.argmax(prediction)
+        class_name = class_names[index]
+        confidence_score = prediction[0][index]
+        
+        # Determine state based on labels
+        # Assuming label indices correspond to 0: Fist, 1: Open Hand (check labels.txt if needed)
+        # However, it's safer to check the text in labels.txt
+        label_text = class_name[2:].strip().upper()
+        if "FIST" in label_text or "VUIST" in label_text:
+            is_fist = True
+        elif "OPEN" in label_text:
+            is_open = True
 
     # State mechanism based on hand movement
     # Trigger only if it's a NEW fist movement
